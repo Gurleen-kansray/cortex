@@ -44,20 +44,19 @@ TEST_CASE("S6 R-IEKF: H annihilates the 4-DoF gauge at the synthetic scene",
     }
 }
 
-TEST_CASE("S6 R-IEKF: degenerate track (1 obs) is rejected -- clones unchanged",
-          "[tools][bench][s6][riekf][reject]") {
+TEST_CASE("S6 R-IEKF: degenerate track (1 obs) is rejected -- clones unchanged", "[tools][bench][s6][riekf][reject]") {
     using B = branes::tools::bench::S6RieкfUpdateBench;
     B::Input<double> in;
     // 3 identity clones
     for (int c = 0; c < 3; ++c) {
         branes::sdk::msckf::InvariantClone<double> cl;
-        cl.p = branes::math::lie::detail::Vec<double,3>{{0.5*c, 0.0, 0.0}};
+        cl.p = branes::math::lie::detail::Vec<double, 3>{{0.5 * c, 0.0, 0.0}};
         in.clones.push_back(cl);
     }
-    in.p_f = branes::math::lie::detail::Vec<double,3>{{0.0, 0.0, 3.0}};
+    in.p_f = branes::math::lie::detail::Vec<double, 3>{{0.0, 0.0, 3.0}};
     in.sigma = 0.01;
     // only 1 observation — invariant_update returns false immediately
-    in.obs = {{ 0, 0, branes::math::lie::detail::Vec<double,2>{{0.0, 0.0}} }};
+    in.obs = {{0, 0, branes::math::lie::detail::Vec<double, 2>{{0.0, 0.0}}}};
 
     const auto clones_before = in.clones;
     const auto out = B::run<double>(in, branes::tools::bench::kShipped);
