@@ -119,10 +119,14 @@ struct S9RiEkfMargBench {
         // set nav to identity SE₂(3) with zero biases
         be.set_nav(typename Backend::SE23{}, zero, zero, 0.0);
 
-        // augment clones — each augment_clone() copies nav pose into clone list
-        // and grows the covariance via the G-matrix stencil
+        // augment clones — vary nav rotation between augmentations so each
+        // clone's pose (and therefore its covariance block) is distinguishable.
+        // This lets the principal-submatrix oracle detect incorrect clone-index
+        // handling (e.g. always dropping clone 0 regardless of drop_idx).
         for (std::size_t i = 0; i < n_clones; ++i) {
-            (void)small_angle();  // consume rng for variety; nav pose fixed
+            const typename Backend::Vec3 phi = small_angle();
+            const typename Backend::SE23 X_i(typename Backend::SO3::exp(phi), zero, zero);
+            be.set_nav(X_i, zero, zero, static_cast<double>(i));
             be.augment_clone();
         }
 
