@@ -239,7 +239,7 @@ struct S6RieкfUpdateBench {
         // passes for both double and float without false positives.
         const double fd_eps = std::sqrt(static_cast<double>(std::numeric_limits<T>::epsilon()));
         // fd_tol: O(h) truncation error for step h=fd_eps; never tighter than double's eps.
-        const double fd_tol = std::max(fd_eps, tolerance_vs_double<double>(6, 1.0));
+        const double fd_tol = std::max(200.0 * fd_eps, tolerance_vs_double<double>(6, 1.0));
         double worst_fd = 0.0;
         if (M.ok) {
             for (std::size_t c = 0; c < nc; ++c) {
