@@ -37,8 +37,8 @@ TEST_CASE("S6 R-IEKF: H annihilates the 4-DoF gauge at the synthetic scene",
     const auto out = B::run<double>(in, bn::kShipped);
     REQUIRE(out.applied);
     const auto rs = B::invariants<double>(in, out, {});
-    const auto it = std::find_if(rs.begin(), rs.end(),
-        [](const auto& r) { return r.name == "jacobian.annihilates_gauge"; });
+    const auto it =
+        std::find_if(rs.begin(), rs.end(), [](const auto& r) { return r.name == "jacobian.annihilates_gauge"; });
     REQUIRE(it != rs.end());
     INFO("gauge leak = " << it->value);
     REQUIRE(it->pass);

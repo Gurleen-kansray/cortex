@@ -18,8 +18,8 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <cstddef>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -300,8 +300,8 @@ struct S6RieкfUpdateBench {
         // Both matrices are held as double so check_loewner_le types match.
         const ms2::FullCovariance<T> cov_prior(T(0.5), n);
         const auto P_prior_T = cov_prior.covariance();
-        msckf::DynMat<double> P_prior(n, n);
-        msckf::DynMat<double> P_after(n, n);
+        branes::sdk::msckf::DynMat<double> P_prior(n, n);
+        branes::sdk::msckf::DynMat<double> P_after(n, n);
         for (std::size_t i = 0; i < n; ++i)
             for (std::size_t j = 0; j < n; ++j) {
                 P_prior(i, j) = static_cast<double>(P_prior_T(i, j));
