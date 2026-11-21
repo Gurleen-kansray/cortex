@@ -125,7 +125,7 @@ struct S9RiEkfMargBench {
         // handling (e.g. always dropping clone 0 regardless of drop_idx).
         for (std::size_t i = 0; i < n_clones; ++i) {
             const typename Backend::Vec3 phi = small_angle();
-            const typename Backend::SE23 X_i(typename Backend::SO3::exp(phi), zero, zero);
+            const typename Backend::SE23 X_i(Backend::SO3::exp(phi), zero, zero);
             be.set_nav(X_i, zero, zero, static_cast<double>(i));
             be.augment_clone();
         }
