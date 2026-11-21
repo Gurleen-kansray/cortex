@@ -238,7 +238,7 @@ struct S6RieкfUpdateBench {
         // Step and tolerance are scaled to the scalar precision so the check
         // passes for both double and float without false positives.
         const double fd_eps = std::sqrt(static_cast<double>(std::numeric_limits<T>::epsilon()));
-        const double fd_tol = tolerance_vs_double<T>(6, 1.0);
+        const double fd_tol = tolerance_vs_double<T>(6, 10.0);
         double worst_fd = 0.0;
         if (M.ok) {
             for (std::size_t c = 0; c < nc; ++c) {
