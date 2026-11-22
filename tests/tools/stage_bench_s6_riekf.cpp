@@ -14,6 +14,18 @@ namespace bn = branes::tools::bench;
 using B = bn::S6RieкfUpdateBench;
 }  // namespace
 
+TEST_CASE("S6 R-IEKF: every built-in fixture passes all invariants (float)", "[tools][bench][s6][riekf][float]") {
+    for (const auto& nf : B::builtin_fixtures()) {
+        const auto in = B::decode_input<float>(nf.fixture.input);
+        const auto out = B::run<float>(in, bn::kShipped);
+        const auto rs = B::invariants<float>(in, out, nf.fixture);
+        for (const auto& res : rs) {
+            INFO(nf.name << " / " << res.name << " = " << res.value);
+            REQUIRE(res.pass);
+        }
+    }
+}
+
 TEST_CASE("S6 R-IEKF: every built-in fixture passes all invariants", "[tools][bench][s6][riekf]") {
     for (const auto& nf : B::builtin_fixtures()) {
         const auto in = B::decode_input<double>(nf.fixture.input);
@@ -42,6 +54,30 @@ TEST_CASE("S6 R-IEKF: H annihilates the 4-DoF gauge at the synthetic scene",
     REQUIRE(it != rs.end());
     INFO("gauge leak = " << it->value);
     REQUIRE(it->pass);
+}
+
+TEST_CASE("S6 R-IEKF: inflated covariance fails Loewner check", "[tools][bench][s6][riekf][negative]") {
+    // Negative regression: a cov_after that is larger than cov_prior in at
+    // least one direction must fail covariance.no_larger_than_prior regardless
+    // of float/double tolerance scaling.
+    const auto sc = B::make_scene();
+    B::Input<double> in;
+    in.clones = sc.clones;
+    in.p_f = sc.feats[0];
+    in.obs = B::track(sc.clones, sc.feats[0]);
+    in.sigma = 0.01;
+    auto out = B::run<double>(in, bn::kShipped);
+    REQUIRE(out.applied);
+    // Inflate every diagonal entry by 10x — well beyond any roundoff tolerance.
+    const std::size_t n = out.clones_after.size() * 6;
+    for (std::size_t i = 0; i < n; ++i)
+        out.cov_after[i * n + i] *= 10.0;
+    const auto rs = B::invariants<double>(in, out, {});
+    const auto it =
+        std::find_if(rs.begin(), rs.end(), [](const auto& r) { return r.name == "covariance.no_larger_than_prior"; });
+    REQUIRE(it != rs.end());
+    INFO("Loewner value = " << it->value);
+    REQUIRE_FALSE(it->pass);
 }
 
 TEST_CASE("S6 R-IEKF: degenerate track (1 obs) is rejected -- clones unchanged", "[tools][bench][s6][riekf][reject]") {

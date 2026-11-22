@@ -293,8 +293,9 @@ struct S6RieкfUpdateBench {
                     worst_g = std::max(worst_g, std::abs(static_cast<double>(hv)));
                 }
             }
-            r.push_back(
-                inv::check_scalar(worst_g, 1e-10, inv::Bound::Upper, kInvStage, "jacobian.annihilates_gauge", "abs"));
+            const double gauge_tol = std::max(1e-10, 1e3 * static_cast<double>(std::numeric_limits<T>::epsilon()));
+            r.push_back(inv::check_scalar(
+                worst_g, gauge_tol, inv::Bound::Upper, kInvStage, "jacobian.annihilates_gauge", "abs"));
         }
 
         // 3. P+ PSD and P+ ⪯ P- (Loewner order)
@@ -308,7 +309,12 @@ struct S6RieкfUpdateBench {
                 P_prior(i, j) = static_cast<double>(P_prior_T(i, j));
                 P_after(i, j) = out.cov_after[i * n + j];
             }
-        const double safety = safety_vs_double<T>();
+        // The matrices are DynMat<double>, so check_loewner_le and check_psd
+        // use double epsilon. Scale up for float: float roundoff is ~2^29x
+        // coarser than double, so a valid float result can differ by that much.
+        const double eps_T = static_cast<double>(std::numeric_limits<T>::epsilon());
+        const double eps_d = std::numeric_limits<double>::epsilon();
+        const double safety = safety_vs_double<T>() * std::max(1.0, eps_T / eps_d);
         r.push_back(inv::check_psd(P_after, kInvStage, "covariance.psd", safety));
         // trace ratio kept as a lightweight diagnostic
         double tp = 0.0, tq = 0.0;
