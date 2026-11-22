@@ -128,8 +128,10 @@ struct S6RieкfUpdateBench {
         in.sigma = T(j.at("sigma").get<double>());
         for (const auto& jc : j.at("clones")) {
             branes::sdk::msckf::InvariantClone<T> c;
-            c.R = SO3::from_unit_quaternion(
-                {jc["qw"].get<double>(), jc["qx"].get<double>(), jc["qy"].get<double>(), jc["qz"].get<double>()});
+            c.R = SO3::from_unit_quaternion({T(jc["qw"].get<double>()),
+                                             T(jc["qx"].get<double>()),
+                                             T(jc["qy"].get<double>()),
+                                             T(jc["qz"].get<double>())});
             c.p = V3{{T(jc["px"].get<double>()), T(jc["py"].get<double>()), T(jc["pz"].get<double>())}};
             in.clones.push_back(c);
         }
@@ -175,8 +177,10 @@ struct S6RieкfUpdateBench {
         out.applied = j.at("applied").get<bool>();
         for (const auto& jc : j.at("clones_after")) {
             branes::sdk::msckf::InvariantClone<T> c;
-            c.R = SO3::from_unit_quaternion(
-                {jc["qw"].get<double>(), jc["qx"].get<double>(), jc["qy"].get<double>(), jc["qz"].get<double>()});
+            c.R = SO3::from_unit_quaternion({T(jc["qw"].get<double>()),
+                                             T(jc["qx"].get<double>()),
+                                             T(jc["qy"].get<double>()),
+                                             T(jc["qz"].get<double>())});
             c.p = V3{{T(jc["px"].get<double>()), T(jc["py"].get<double>()), T(jc["pz"].get<double>())}};
             out.clones_after.push_back(c);
         }
