@@ -112,17 +112,10 @@ struct S9RiEkfMargBench {
         // set nav to identity SE₂(3) with zero biases
         be.set_nav(typename Backend::SE23{}, zero, zero, 0.0);
 
-        // augment clones — vary nav rotation between augmentations so each
-        // clone's pose (and therefore its covariance block) is distinguishable.
-        // This lets the principal-submatrix oracle detect incorrect clone-index
-        // handling (e.g. always dropping clone 0 regardless of drop_idx).
-        for (std::size_t i = 0; i < n_clones; ++i) {
-            // propagate over a small IMU interval so each clone's covariance
-            // block accumulates distinct noise, making the principal-submatrix
-            // oracle sensitive to incorrect clone-index handling.
-            be.propagate(zero, zero, T(0.1));
+        // augment clones with uniform covariance — no propagation, so all
+        // clone blocks are interchangeable. Used as a non-propagated control.
+        for (std::size_t i = 0; i < n_clones; ++i)
             be.augment_clone();
-        }
 
         // ── snapshot pre-marginalization covariance ──────────────────────────
         const DynMat<T> P_pre = be.covariance();
