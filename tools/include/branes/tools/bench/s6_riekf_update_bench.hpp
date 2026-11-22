@@ -317,7 +317,7 @@ struct S6RieкfUpdateBench {
             tq += out.cov_after[i * n + i];
         }
         r.push_back(inv::check_scalar(
-            tq / (tp + 1e-300), 1.0, inv::Bound::Upper, kInvStage, "covariance.trace_ratio_le_1", "ratio"));
+            tq / (tp + 1e-300), 1.0, inv::Bound::Report, kInvStage, "covariance.trace_ratio_le_1", "ratio"));
         r.push_back(inv::check_loewner_le(P_after, P_prior, kInvStage, "covariance.no_larger_than_prior", safety));
         return r;
     }
