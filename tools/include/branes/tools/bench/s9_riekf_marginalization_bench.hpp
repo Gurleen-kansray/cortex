@@ -154,8 +154,7 @@ struct S9RiEkfMargBench {
     /// Return the max absolute difference between the diagonal 6×6 clone blocks
     /// for clone i and clone j in a propagated backend.  Used by tests to prove
     /// that run_propagated() produces genuinely distinct blocks.
-    static double clone_block_diff(std::size_t n_clones, std::size_t i, std::size_t j,
-                                   unsigned seed = 42) {
+    static double clone_block_diff(std::size_t n_clones, std::size_t i, std::size_t j, unsigned seed = 42) {
         typename Backend::Config cfg;
         cfg.max_clones = n_clones + 1;
         Backend be(cfg);
@@ -189,8 +188,7 @@ struct S9RiEkfMargBench {
         double mx = 0.0;
         for (std::size_t r = 0; r < kCloneDim; ++r)
             for (std::size_t c = 0; c < kCloneDim; ++c)
-                mx = std::max(mx, std::abs(static_cast<double>(
-                    P(bi + r, bi + c) - P(bj + r, bj + c))));
+                mx = std::max(mx, std::abs(static_cast<double>(P(bi + r, bi + c) - P(bj + r, bj + c))));
         return mx;
     }
 
@@ -199,8 +197,7 @@ struct S9RiEkfMargBench {
     /// A buggy marginalize_clone() that always removes clone 0 regardless of
     /// drop_idx will fail psub_ok whenever drop_idx != 0, because the blocks
     /// for clone 0 and clone k (k > 0) differ once propagation has run.
-    static Result run_propagated(std::size_t n_clones, std::size_t drop_idx,
-                                 unsigned seed = 42) {
+    static Result run_propagated(std::size_t n_clones, std::size_t drop_idx, unsigned seed = 42) {
         const double tol = (sizeof(T) >= 8) ? 1e-10 : 1e-4;
 
         typename Backend::Config cfg;
@@ -251,8 +248,7 @@ struct S9RiEkfMargBench {
             for (std::size_t r = 0; r < kCloneDim; ++r)
                 for (std::size_t c = 0; c < kCloneDim; ++c)
                     max_diff = std::max(max_diff,
-                        std::abs(static_cast<double>(P_pre(b0 + r, b0 + c) -
-                                                     P_pre(b1 + r, b1 + c))));
+                                        std::abs(static_cast<double>(P_pre(b0 + r, b0 + c) - P_pre(b1 + r, b1 + c))));
             assert(max_diff > 1e-6 && "propagation must make clone blocks distinct");
         }
 
@@ -260,9 +256,8 @@ struct S9RiEkfMargBench {
         const DynMat<T> P_post = be.covariance();
 
         Result res;
-        res.dim_ok = (P_post.rows == d_post_expected) &&
-                     (P_post.cols == d_post_expected) &&
-                     (be.num_clones() == n_clones - 1);
+        res.dim_ok =
+            (P_post.rows == d_post_expected) && (P_post.cols == d_post_expected) && (be.num_clones() == n_clones - 1);
 
         const std::size_t off = kNavDim + kCloneDim * drop_idx;
         const DynMat<T> Q = principal_submatrix(P_pre, off);
