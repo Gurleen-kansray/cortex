@@ -56,10 +56,10 @@ TEST_CASE("S6 R-IEKF: H annihilates the 4-DoF gauge at the synthetic scene",
     REQUIRE(it->pass);
 }
 
-TEST_CASE("S6 R-IEKF: inflated covariance fails Loewner check", "[tools][bench][s6][riekf][negative]") {
-    // Negative regression: a cov_after that is larger than cov_prior in at
-    // least one direction must fail covariance.no_larger_than_prior regardless
-    // of float/double tolerance scaling.
+TEST_CASE("S6 R-IEKF: tiny covariance increase passes Loewner check", "[tools][bench][s6][riekf][negative]") {
+    // Boundary regression (pass side): a one-ULP increase in a single diagonal
+    // entry must pass covariance.no_larger_than_prior because the scaled safety
+    // tolerance covers double roundoff in the double-held matrices.
     const auto sc = B::make_scene();
     B::Input<double> in;
     in.clones = sc.clones;
@@ -68,10 +68,33 @@ TEST_CASE("S6 R-IEKF: inflated covariance fails Loewner check", "[tools][bench][
     in.sigma = 0.01;
     auto out = B::run<double>(in, bn::kShipped);
     REQUIRE(out.applied);
-    // Inflate every diagonal entry by 10x — well beyond any roundoff tolerance.
+    // Add one ULP to P[0,0] — within double roundoff, must pass.
+    out.cov_after[0] = std::nextafter(out.cov_after[0], std::numeric_limits<double>::infinity());
+    const auto rs = B::invariants<double>(in, out, {});
+    const auto it =
+        std::find_if(rs.begin(), rs.end(), [](const auto& r) { return r.name == "covariance.no_larger_than_prior"; });
+    REQUIRE(it != rs.end());
+    INFO("Loewner value = " << it->value);
+    REQUIRE(it->pass);
+}
+
+TEST_CASE("S6 R-IEKF: directional inflation fails Loewner check", "[tools][bench][s6][riekf][negative]") {
+    // Boundary regression (fail side): inflate P[0,0] and deflate P[1,1] by
+    // the same amount so the trace is unchanged, but the Loewner condition fails
+    // because one eigenvalue of P_after - P_prior is positive.
+    const auto sc = B::make_scene();
+    B::Input<double> in;
+    in.clones = sc.clones;
+    in.p_f = sc.feats[0];
+    in.obs = B::track(sc.clones, sc.feats[0]);
+    in.sigma = 0.01;
+    auto out = B::run<double>(in, bn::kShipped);
+    REQUIRE(out.applied);
     const std::size_t n = out.clones_after.size() * 6;
-    for (std::size_t i = 0; i < n; ++i)
-        out.cov_after[i * n + i] *= 10.0;
+    // Swap-inflate: P[0,0] += delta, P[1,1] -= delta. Trace unchanged.
+    const double delta = out.cov_after[0] * 0.5;
+    out.cov_after[0] += delta;
+    out.cov_after[n + 1] -= delta;
     const auto rs = B::invariants<double>(in, out, {});
     const auto it =
         std::find_if(rs.begin(), rs.end(), [](const auto& r) { return r.name == "covariance.no_larger_than_prior"; });
