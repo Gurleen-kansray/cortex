@@ -320,6 +320,54 @@ struct S6RiekfUpdateBench {
         r.push_back(inv::check_scalar(
             worst_fd, fd_tol, inv::Bound::Upper, kInvStage, "jacobian.matches_finite_diff", "relative"));
 
+        // 1b. M.H_x (T-precision Jacobian) vs same double FD — catches float-only Jacobian errors.
+        const double fd_tol_T = std::max(200.0 * fd_eps *
+                                             std::max(1.0,
+                                                      static_cast<double>(std::numeric_limits<T>::epsilon()) /
+                                                          std::numeric_limits<double>::epsilon()),
+                                         tolerance_vs_double<T>(6, 1.0));
+        double worst_fd_T = 0.0;
+        if (Md.ok && M.ok) {
+            for (std::size_t c = 0; c < nc; ++c) {
+                for (std::size_t k = 0; k < 6; ++k) {
+                    auto cp = clones_d;
+                    if (k < 3) {
+                        V3d phi{};
+                        phi[k] = fd_eps;
+                        const SO3d dR = SO3d::exp(phi);
+                        cp[c].R = dR * cp[c].R;
+                        cp[c].p = dR * cp[c].p;
+                    } else {
+                        cp[c].p[k - 3] = cp[c].p[k - 3] + fd_eps;
+                    }
+                    const auto Mp = ms2::build_invariant_measurement<Sc2>(cp, obs_d, pf_d);
+                    auto cm = clones_d;
+                    if (k < 3) {
+                        V3d phi{};
+                        phi[k] = -fd_eps;
+                        const SO3d dR = SO3d::exp(phi);
+                        cm[c].R = dR * cm[c].R;
+                        cm[c].p = dR * cm[c].p;
+                    } else {
+                        cm[c].p[k - 3] = cm[c].p[k - 3] - fd_eps;
+                    }
+                    const auto Mm = ms2::build_invariant_measurement<Sc2>(cm, obs_d, pf_d);
+                    if (!Mp.ok || !Mm.ok)
+                        continue;
+                    for (std::size_t row = 0; row < M.rows2; ++row) {
+                        const double fd = (Mp.r[row] - Mm.r[row]) / (2.0 * fd_eps);
+                        const double Hv_T = -static_cast<double>(M.H_x[row * n + 6 * c + k]);
+                        double e = (std::abs(fd) < fd_eps && std::abs(Hv_T) < fd_eps)
+                                       ? 0.0
+                                       : std::abs(fd - Hv_T) / (std::abs(Hv_T) + fd_tol_T);
+                        worst_fd_T = std::max(worst_fd_T, e);
+                    }
+                }
+            }
+        }
+        r.push_back(inv::check_scalar(
+            worst_fd_T, fd_tol_T, inv::Bound::Upper, kInvStage, "jacobian.matches_finite_diff_T", "relative"));
+
         // 2. gauge annihilation
         if (M.ok) {
             const auto proj = branes::sdk::features::msckf_left_nullspace_project<T>(M.H_f, M.H_x, M.r, M.rows2, n);
