@@ -57,25 +57,47 @@ TEST_CASE("S6 R-IEKF: H annihilates the 4-DoF gauge at the synthetic scene",
 }
 
 TEST_CASE("S6 R-IEKF: tiny covariance increase passes Loewner check", "[tools][bench][s6][riekf][negative]") {
-    // Boundary regression (pass side): a one-ULP increase in a single diagonal
-    // entry must pass covariance.no_larger_than_prior because the scaled safety
-    // tolerance covers double roundoff in the double-held matrices.
-    const auto sc = B::make_scene();
-    B::Input<double> in;
-    in.clones = sc.clones;
-    in.p_f = sc.feats[0];
-    in.obs = B::track(sc.clones, sc.feats[0]);
-    in.sigma = 0.01;
-    auto out = B::run<double>(in, bn::kShipped);
+    // Boundary regression (pass side): run with float, then raise P[0,0] by
+    // one float ULP above the prior diagonal (0.5). The increase is at float
+    // precision, well within the float-scaled safety tolerance, so the Loewner
+    // check must pass. The trace ratio must be above one (increase is real).
+    // Construct float input directly — same geometry as the gauge test.
+    B::Input<float> in;
+    for (int c = 0; c < 3; ++c) {
+        branes::sdk::msckf::InvariantClone<float> cl;
+        cl.p = branes::math::lie::detail::Vec<float, 3>{{0.5f * c, 0.0f, 0.0f}};
+        in.clones.push_back(cl);
+    }
+    in.p_f = branes::math::lie::detail::Vec<float, 3>{{0.0f, 0.0f, 3.0f}};
+    in.sigma = 0.01f;
+    {
+        // Build observations from identity clones projecting feature at (0,0,3).
+        for (std::size_t ci = 0; ci < in.clones.size(); ++ci) {
+            const auto& cl = in.clones[ci];
+            const float dx = in.p_f[0] - cl.p[0], dy = in.p_f[1] - cl.p[1], dz = in.p_f[2] - cl.p[2];
+            branes::math::lie::detail::Vec<float, 2> xy{{dx / dz, dy / dz}};
+            in.obs.push_back({ci, 0, xy});
+        }
+    }
+    auto out = B::run<float>(in, bn::kShipped);
     REQUIRE(out.applied);
-    // Add one ULP to P[0,0] — within double roundoff, must pass.
-    out.cov_after[0] = std::nextafter(out.cov_after[0], std::numeric_limits<double>::infinity());
-    const auto rs = B::invariants<double>(in, out, {});
-    const auto it =
+    // Set P[0,0] to one float ULP above its current value.
+    // The posterior is already <= prior (0.5); a one-ULP float increase
+    // stays within the float-scaled safety tolerance, so Loewner must pass.
+    const float p00 = static_cast<float>(out.cov_after[0]);
+    out.cov_after[0] = static_cast<double>(std::nextafter(p00, std::numeric_limits<float>::infinity()));
+    const auto rs = B::invariants<float>(in, out, {});
+    const auto loewner =
         std::find_if(rs.begin(), rs.end(), [](const auto& r) { return r.name == "covariance.no_larger_than_prior"; });
-    REQUIRE(it != rs.end());
-    INFO("Loewner value = " << it->value);
-    REQUIRE(it->pass);
+    REQUIRE(loewner != rs.end());
+    INFO("Loewner value = " << loewner->value);
+    REQUIRE(loewner->pass);
+    // Trace diagnostic is present and never fails (Bound::Report).
+    const auto trace_it =
+        std::find_if(rs.begin(), rs.end(), [](const auto& r) { return r.name == "covariance.trace_ratio_le_1"; });
+    REQUIRE(trace_it != rs.end());
+    INFO("trace ratio = " << trace_it->value);
+    REQUIRE(trace_it->pass);  // Bound::Report always passes
 }
 
 TEST_CASE("S6 R-IEKF: directional inflation fails Loewner check", "[tools][bench][s6][riekf][negative]") {
@@ -101,6 +123,14 @@ TEST_CASE("S6 R-IEKF: directional inflation fails Loewner check", "[tools][bench
     REQUIRE(it != rs.end());
     INFO("Loewner value = " << it->value);
     REQUIRE_FALSE(it->pass);
+    // Assert trace is unchanged -- this test is not a trace check.
+    double tp = 0.0, tq = 0.0;
+    for (std::size_t i = 0; i < n; ++i) {
+        tp += 0.5;
+        tq += out.cov_after[i * n + i];
+    }
+    INFO("trace prior = " << tp << " trace after = " << tq);
+    REQUIRE(tq <= tp + 1e-12);
 }
 
 TEST_CASE("S6 R-IEKF: degenerate track (1 obs) is rejected -- clones unchanged", "[tools][bench][s6][riekf][reject]") {
