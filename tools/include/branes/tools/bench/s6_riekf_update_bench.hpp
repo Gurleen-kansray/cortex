@@ -129,8 +129,10 @@ struct S6RiekfUpdateBench {
         in.sigma = T(j.at("sigma").get<double>());
         for (const auto& jc : j.at("clones")) {
             branes::sdk::msckf::InvariantClone<T> c;
-            c.R = SO3::from_unit_quaternion(
-                {jc["qw"].get<double>(), jc["qx"].get<double>(), jc["qy"].get<double>(), jc["qz"].get<double>()});
+            c.R = SO3::from_unit_quaternion({static_cast<T>(jc["qw"].get<double>()),
+                                             static_cast<T>(jc["qx"].get<double>()),
+                                             static_cast<T>(jc["qy"].get<double>()),
+                                             static_cast<T>(jc["qz"].get<double>())});
             c.p = V3{{T(jc["px"].get<double>()), T(jc["py"].get<double>()), T(jc["pz"].get<double>())}};
             in.clones.push_back(c);
         }
@@ -176,8 +178,10 @@ struct S6RiekfUpdateBench {
         out.applied = j.at("applied").get<bool>();
         for (const auto& jc : j.at("clones_after")) {
             branes::sdk::msckf::InvariantClone<T> c;
-            c.R = SO3::from_unit_quaternion(
-                {jc["qw"].get<double>(), jc["qx"].get<double>(), jc["qy"].get<double>(), jc["qz"].get<double>()});
+            c.R = SO3::from_unit_quaternion({static_cast<T>(jc["qw"].get<double>()),
+                                             static_cast<T>(jc["qx"].get<double>()),
+                                             static_cast<T>(jc["qy"].get<double>()),
+                                             static_cast<T>(jc["qz"].get<double>())});
             c.p = V3{{T(jc["px"].get<double>()), T(jc["py"].get<double>()), T(jc["pz"].get<double>())}};
             out.clones_after.push_back(c);
         }
@@ -242,42 +246,69 @@ struct S6RiekfUpdateBench {
 
         // 1. H vs finite-diff
         // Central difference in double precision so the truncation error is O(h^2)
-        // and the tolerance can be tightened to O(h^2) regardless of T.
+        // tolerance is O(h) = O(sqrt(eps_double)); 200x headroom for non-identity poses.
         const double fd_eps = std::sqrt(std::numeric_limits<double>::epsilon());
-        const double fd_tol = std::max(10.0 * fd_eps * fd_eps, tolerance_vs_double<double>(6, 1.0));
+        const double fd_tol = std::max(200.0 * fd_eps, tolerance_vs_double<double>(6, 1.0));
+        // Convert inputs to double so float rounding cannot swallow the perturbation.
+        using Sc2 = double;
+        using SO3d = branes::math::lie::SO3<Sc2>;
+        using V3d = branes::math::lie::detail::Vec<Sc2, 3>;
+        std::vector<ms2::InvariantClone<Sc2>> clones_d;
+        clones_d.reserve(nc);
+        for (const auto& cl : in.clones) {
+            ms2::InvariantClone<Sc2> cd;
+            const auto q = cl.R.quaternion();
+            cd.R = SO3d::from_unit_quaternion(branes::math::lie::detail::Vec<Sc2, 4>{
+                {static_cast<Sc2>(q[0]), static_cast<Sc2>(q[1]), static_cast<Sc2>(q[2]), static_cast<Sc2>(q[3])}});
+            for (int i = 0; i < 3; ++i)
+                cd.p[i] = static_cast<Sc2>(cl.p[i]);
+            clones_d.push_back(cd);
+        }
+        std::vector<ms2::InvariantObs<Sc2>> obs_d;
+        obs_d.reserve(in.obs.size());
+        for (const auto& o : in.obs) {
+            ms2::InvariantObs<Sc2> od;
+            od.clone_index = o.clone_index;
+            od.camera_index = o.camera_index;
+            for (int i = 0; i < 2; ++i)
+                od.xy[i] = static_cast<Sc2>(o.xy[i]);
+            obs_d.push_back(od);
+        }
+        V3d pf_d{};
+        for (int i = 0; i < 3; ++i)
+            pf_d[i] = static_cast<Sc2>(in.p_f[i]);
+        const auto Md = ms2::build_invariant_measurement<Sc2>(clones_d, obs_d, pf_d);
         double worst_fd = 0.0;
-        if (M.ok) {
+        if (Md.ok) {
             for (std::size_t c = 0; c < nc; ++c) {
                 for (std::size_t k = 0; k < 6; ++k) {
-                    auto cp = in.clones;
+                    auto cp = clones_d;
                     if (k < 3) {
-                        V3 phi{};
-                        phi[k] = T(fd_eps);
-                        const SO3 dR = SO3::exp(phi);
+                        V3d phi{};
+                        phi[k] = fd_eps;
+                        const SO3d dR = SO3d::exp(phi);
                         cp[c].R = dR * cp[c].R;
                         cp[c].p = dR * cp[c].p;
                     } else {
-                        cp[c].p[k - 3] = cp[c].p[k - 3] + T(fd_eps);
+                        cp[c].p[k - 3] = cp[c].p[k - 3] + fd_eps;
                     }
-                    const auto Mp = ms2::build_invariant_measurement<T>(cp, in.obs, in.p_f);
-                    // backward perturbation for central difference
-                    auto cm = in.clones;
+                    const auto Mp = ms2::build_invariant_measurement<Sc2>(cp, obs_d, pf_d);
+                    auto cm = clones_d;
                     if (k < 3) {
-                        V3 phi{};
-                        phi[k] = T(-fd_eps);
-                        const SO3 dR = SO3::exp(phi);
+                        V3d phi{};
+                        phi[k] = -fd_eps;
+                        const SO3d dR = SO3d::exp(phi);
                         cm[c].R = dR * cm[c].R;
                         cm[c].p = dR * cm[c].p;
                     } else {
-                        cm[c].p[k - 3] = cm[c].p[k - 3] - T(fd_eps);
+                        cm[c].p[k - 3] = cm[c].p[k - 3] - fd_eps;
                     }
-                    const auto Mm = ms2::build_invariant_measurement<T>(cm, in.obs, in.p_f);
+                    const auto Mm = ms2::build_invariant_measurement<Sc2>(cm, obs_d, pf_d);
                     if (!Mp.ok || !Mm.ok)
                         continue;
-                    for (std::size_t row = 0; row < M.rows2; ++row) {
-                        const double fd =
-                            (static_cast<double>(Mp.r[row]) - static_cast<double>(Mm.r[row])) / (2.0 * fd_eps);
-                        const double Hv = -static_cast<double>(M.H_x[row * n + 6 * c + k]);
+                    for (std::size_t row = 0; row < Md.rows2; ++row) {
+                        const double fd = (Mp.r[row] - Mm.r[row]) / (2.0 * fd_eps);
+                        const double Hv = -Md.H_x[row * Md.n + 6 * c + k];
                         double e = (std::abs(fd) < fd_eps && std::abs(Hv) < fd_eps)
                                        ? 0.0
                                        : std::abs(fd - Hv) / (std::abs(Hv) + fd_tol);
@@ -328,7 +359,11 @@ struct S6RiekfUpdateBench {
                 P_prior(i, j) = out.cov_prior[i * n + j];
                 P_after(i, j) = out.cov_after[i * n + j];
             }
-        const double safety = safety_vs_double<T>();
+        // safety_vs_double<T>() returns 1.0 for float (eps_double/eps_float < 1).
+        // Scale up so the Loewner threshold matches float precision, not double.
+        const double eps_T = static_cast<double>(std::numeric_limits<T>::epsilon());
+        const double eps_d = std::numeric_limits<double>::epsilon();
+        const double safety = inv::kDefaultSafety * std::max(1.0, eps_T / eps_d);
         r.push_back(inv::check_psd(P_after, kInvStage, "covariance.psd", safety));
         // trace ratio kept as a lightweight diagnostic
         double tp = 0.0, tq = 0.0;

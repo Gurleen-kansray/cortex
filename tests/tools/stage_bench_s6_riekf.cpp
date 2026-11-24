@@ -72,3 +72,15 @@ TEST_CASE("S6 R-IEKF: degenerate track (1 obs) is rejected -- clones unchanged",
             REQUIRE(clones_before[i].p[k] == out.clones_after[i].p[k]);
     }
 }
+
+TEST_CASE("S6 R-IEKF: every built-in fixture passes all invariants (float)", "[tools][bench][s6][riekf][float]") {
+    for (const auto& nf : B::builtin_fixtures()) {
+        const auto in = B::decode_input<float>(nf.fixture.input);
+        const auto out = B::run<float>(in, bn::kShipped);
+        const auto rs = B::invariants<float>(in, out, nf.fixture);
+        for (const auto& res : rs) {
+            INFO(nf.name << " / " << res.name << " = " << res.value);
+            REQUIRE(res.pass);
+        }
+    }
+}
