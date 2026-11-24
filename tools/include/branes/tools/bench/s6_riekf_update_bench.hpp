@@ -65,7 +65,7 @@ inline std::vector<ms::InvariantObs<Sc>> make_track(const std::vector<ms::Invari
 }
 }  // namespace s6_riekf_detail
 
-struct S6RieкfUpdateBench {
+struct S6RiekfUpdateBench {
     static constexpr std::string_view kStage = "S6_riekf_update";
     static constexpr inv::Stage kInvStage = inv::Stage::S6_riekf_update;
 
@@ -80,6 +80,7 @@ struct S6RieкfUpdateBench {
     struct Output {
         std::vector<branes::sdk::msckf::InvariantClone<T>> clones_after;
         std::vector<double> cov_after{};
+        std::vector<double> cov_prior{};
         bool applied = false;
     };
 
@@ -189,6 +190,11 @@ struct S6RieкfUpdateBench {
         branes::sdk::msckf::FullCovariance<T> cov(T(0.5), 6 * in.clones.size());
         auto clones = in.clones;
         Output<T> out;
+        const auto P0 = cov.covariance();
+        out.cov_prior.reserve(P0.rows * P0.cols);
+        for (std::size_t i = 0; i < P0.rows; ++i)
+            for (std::size_t j = 0; j < P0.cols; ++j)
+                out.cov_prior.push_back(static_cast<double>(P0(i, j)));
         out.applied = branes::sdk::msckf::invariant_update<T>(clones, cov, in.obs, in.p_f, in.sigma);
         out.clones_after = clones;
         const auto P = cov.covariance();
@@ -221,7 +227,7 @@ struct S6RieкfUpdateBench {
 
     template <class T>
     [[nodiscard]] static std::vector<inv::InvariantResult>
-    invariants(const Input<T>& in, const Output<T>& out, const Fixture&) {
+    invariants(const Input<T>& in, const Output<T>& out, const Fixture& fix) {
         namespace ms2 = branes::sdk::msckf;
         using V3 = branes::math::lie::detail::Vec<T, 3>;
         using SO3 = branes::math::lie::SO3<T>;
@@ -235,11 +241,10 @@ struct S6RieкfUpdateBench {
         const std::size_t n = M.n;
 
         // 1. H vs finite-diff
-        // Step and tolerance are scaled to the scalar precision so the check
-        // passes for both double and float without false positives.
-        const double fd_eps = std::sqrt(static_cast<double>(std::numeric_limits<T>::epsilon()));
-        // fd_tol: O(h) truncation error for step h=fd_eps; never tighter than double's eps.
-        const double fd_tol = std::max(200.0 * fd_eps, tolerance_vs_double<double>(6, 1.0));
+        // Central difference in double precision so the truncation error is O(h^2)
+        // and the tolerance can be tightened to O(h^2) regardless of T.
+        const double fd_eps = std::sqrt(std::numeric_limits<double>::epsilon());
+        const double fd_tol = std::max(10.0 * fd_eps * fd_eps, tolerance_vs_double<double>(6, 1.0));
         double worst_fd = 0.0;
         if (M.ok) {
             for (std::size_t c = 0; c < nc; ++c) {
@@ -255,10 +260,23 @@ struct S6RieкfUpdateBench {
                         cp[c].p[k - 3] = cp[c].p[k - 3] + T(fd_eps);
                     }
                     const auto Mp = ms2::build_invariant_measurement<T>(cp, in.obs, in.p_f);
-                    if (!Mp.ok)
+                    // backward perturbation for central difference
+                    auto cm = in.clones;
+                    if (k < 3) {
+                        V3 phi{};
+                        phi[k] = T(-fd_eps);
+                        const SO3 dR = SO3::exp(phi);
+                        cm[c].R = dR * cm[c].R;
+                        cm[c].p = dR * cm[c].p;
+                    } else {
+                        cm[c].p[k - 3] = cm[c].p[k - 3] - T(fd_eps);
+                    }
+                    const auto Mm = ms2::build_invariant_measurement<T>(cm, in.obs, in.p_f);
+                    if (!Mp.ok || !Mm.ok)
                         continue;
                     for (std::size_t row = 0; row < M.rows2; ++row) {
-                        const double fd = (static_cast<double>(Mp.r[row]) - static_cast<double>(M.r[row])) / fd_eps;
+                        const double fd =
+                            (static_cast<double>(Mp.r[row]) - static_cast<double>(Mm.r[row])) / (2.0 * fd_eps);
                         const double Hv = -static_cast<double>(M.H_x[row * n + 6 * c + k]);
                         double e = (std::abs(fd) < fd_eps && std::abs(Hv) < fd_eps)
                                        ? 0.0
@@ -293,19 +311,21 @@ struct S6RieкfUpdateBench {
                     worst_g = std::max(worst_g, std::abs(static_cast<double>(hv)));
                 }
             }
-            r.push_back(
-                inv::check_scalar(worst_g, 1e-10, inv::Bound::Upper, kInvStage, "jacobian.annihilates_gauge", "abs"));
+            r.push_back(inv::check_scalar(worst_g,
+                                          inv::arithmetic_tolerance<T>(n, 1.0),
+                                          inv::Bound::Upper,
+                                          kInvStage,
+                                          "jacobian.annihilates_gauge",
+                                          "abs"));
         }
 
         // 3. P+ PSD and P+ ⪯ P- (Loewner order)
         // Both matrices are held as double so check_loewner_le types match.
-        const ms2::FullCovariance<T> cov_prior(T(0.5), n);
-        const auto P_prior_T = cov_prior.covariance();
         branes::sdk::msckf::DynMat<double> P_prior(n, n);
         branes::sdk::msckf::DynMat<double> P_after(n, n);
         for (std::size_t i = 0; i < n; ++i)
             for (std::size_t j = 0; j < n; ++j) {
-                P_prior(i, j) = static_cast<double>(P_prior_T(i, j));
+                P_prior(i, j) = out.cov_prior[i * n + j];
                 P_after(i, j) = out.cov_after[i * n + j];
             }
         const double safety = safety_vs_double<T>();
@@ -319,6 +339,11 @@ struct S6RieкfUpdateBench {
         r.push_back(inv::check_scalar(
             tq / (tp + 1e-300), 1.0, inv::Bound::Upper, kInvStage, "covariance.trace_ratio_le_1", "ratio"));
         r.push_back(inv::check_loewner_le(P_after, P_prior, kInvStage, "covariance.no_larger_than_prior", safety));
+        if (fix.truth.contains("max_trace_ratio")) {
+            const double max_tr = fix.truth.at("max_trace_ratio").get<double>();
+            r.push_back(inv::check_scalar(
+                tq / (tp + 1e-300), max_tr, inv::Bound::Upper, kInvStage, "covariance.trace_ratio_strict", "ratio"));
+        }
         return r;
     }
 
@@ -360,7 +385,7 @@ struct S6RieкfUpdateBench {
         f.source = "s6_riekf_update_bench: 3 identity clones, feature at (0,0,3), exact obs, sigma=0.01";
         f.description = "exact obs: update must be applied and covariance trace must shrink";
         f.input = encode_input(in);
-        f.truth = json{{"applied", true}};
+        f.truth = json{{"applied", true}, {"max_trace_ratio", 0.99}};
         return f;
     }
 

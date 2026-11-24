@@ -11,7 +11,7 @@
 
 namespace {
 namespace bn = branes::tools::bench;
-using B = bn::S6RieкfUpdateBench;
+using B = bn::S6RiekfUpdateBench;
 }  // namespace
 
 TEST_CASE("S6 R-IEKF: every built-in fixture passes all invariants", "[tools][bench][s6][riekf]") {
@@ -45,7 +45,7 @@ TEST_CASE("S6 R-IEKF: H annihilates the 4-DoF gauge at the synthetic scene",
 }
 
 TEST_CASE("S6 R-IEKF: degenerate track (1 obs) is rejected -- clones unchanged", "[tools][bench][s6][riekf][reject]") {
-    using B = branes::tools::bench::S6RieкfUpdateBench;
+    using B = branes::tools::bench::S6RiekfUpdateBench;
     B::Input<double> in;
     // 3 identity clones
     for (int c = 0; c < 3; ++c) {

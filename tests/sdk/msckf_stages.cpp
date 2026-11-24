@@ -288,6 +288,8 @@ double max_abs(const Vd& a) {
     return m;
 }
 double rel_diff(const Vd& a, const Vd& b) {
+    if (a.size() != b.size())
+        return std::numeric_limits<double>::infinity();
     for (std::size_t i = 0; i < a.size(); ++i)
         if (!std::isfinite(a[i]) || !std::isfinite(b[i]))
             return std::numeric_limits<double>::infinity();
