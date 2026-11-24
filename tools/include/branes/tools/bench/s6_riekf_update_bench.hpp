@@ -321,11 +321,8 @@ struct S6RiekfUpdateBench {
             worst_fd, fd_tol, inv::Bound::Upper, kInvStage, "jacobian.matches_finite_diff", "relative"));
 
         // 1b. M.H_x (T-precision Jacobian) vs same double FD — catches float-only Jacobian errors.
-        const double fd_tol_T = std::max(200.0 * fd_eps *
-                                             std::max(1.0,
-                                                      static_cast<double>(std::numeric_limits<T>::epsilon()) /
-                                                          std::numeric_limits<double>::epsilon()),
-                                         tolerance_vs_double<T>(6, 1.0));
+        // fd_tol_T: same step-size bound as the double check, plus one ULP of T for Jacobian quantization.
+        const double fd_tol_T = fd_tol + static_cast<double>(std::numeric_limits<T>::epsilon());
         double worst_fd_T = 0.0;
         if (Md.ok && M.ok) {
             for (std::size_t c = 0; c < nc; ++c) {
