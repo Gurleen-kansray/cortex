@@ -81,22 +81,34 @@ TEST_CASE("S6 R-IEKF: tiny covariance increase passes Loewner check", "[tools][b
     }
     auto out = B::run<float>(in, bn::kShipped);
     REQUIRE(out.applied);
-    // Set P[0,0] to one float ULP above its current value.
-    // The posterior is already <= prior (0.5); a one-ULP float increase
-    // stays within the float-scaled safety tolerance, so Loewner must pass.
-    const float p00 = static_cast<float>(out.cov_after[0]);
-    out.cov_after[0] = static_cast<double>(std::nextafter(p00, std::numeric_limits<float>::infinity()));
+    INFO("cov_after size = " << out.cov_after.size());
+    INFO("clones_after size = " << out.clones_after.size());
+    INFO("in.clones size = " << in.clones.size());
+    INFO("in.obs size = " << in.obs.size());
+    // Re-initialize cov_after to the prior (0.5*I), then raise P[0,0] by one
+    // float ULP. The increase is at float precision, well within the
+    // float-scaled safety tolerance, so Loewner must pass with a positive
+    // value. The trace ratio exceeds one because P[0,0] > prior diagonal.
+    const std::size_t n = out.clones_after.size() * 6;
+    std::fill(out.cov_after.begin(), out.cov_after.end(), 0.0);
+    // Prior diagonal is sigma^2 = 0.5^2 = 0.25 (FullCovariance(0.5, n) sets P(i,i)=sigma*sigma).
+    for (std::size_t i = 0; i < n; ++i)
+        out.cov_after[i * n + i] = 0.25;
+    out.cov_after[0] = static_cast<double>(std::nextafter(0.25f, std::numeric_limits<float>::infinity()));
     const auto rs = B::invariants<float>(in, out, {});
     const auto loewner =
         std::find_if(rs.begin(), rs.end(), [](const auto& r) { return r.name == "covariance.no_larger_than_prior"; });
     REQUIRE(loewner != rs.end());
     INFO("Loewner value = " << loewner->value);
     REQUIRE(loewner->pass);
-    // Trace diagnostic is present and never fails (Bound::Report).
+    // Loewner value must be positive (increase is real) and pass.
+    REQUIRE(loewner->value > 0.0);
+    // Trace ratio must be above one (P[0,0] exceeds prior diagonal) and pass.
     const auto trace_it =
         std::find_if(rs.begin(), rs.end(), [](const auto& r) { return r.name == "covariance.trace_ratio_le_1"; });
     REQUIRE(trace_it != rs.end());
     INFO("trace ratio = " << trace_it->value);
+    REQUIRE(trace_it->value > 1.0);
     REQUIRE(trace_it->pass);  // Bound::Report always passes
 }
 
